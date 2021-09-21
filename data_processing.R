@@ -96,8 +96,8 @@ temp_surface <- merge(temp_surface, id_match,by.x = c("Fokontany", "LIB_COM"),by
 temp_surface <- subset(temp_surface, select = -c(LIB_FKT, Fokontany, LIB_COM))
 
 temp_surface$LST_C_mean_squared <- (temp_surface$LST_C_mean - 25)^2
-temp_surface$LST_C_min_squared <- (temp_surface$LST_C_min - 25)^2
 temp_surface$LST_C_max_squared <- (temp_surface$LST_C_max - 25)^2
+temp_surface$LST_C_min_squared <- (temp_surface$LST_C_min - 25)^2
 
 # NDWI
 ndwi <- read.csv('NDWI.csv') # Soil moisture
@@ -162,38 +162,6 @@ road_dist$Fokontany <- sapply(str_split(road_dist$Fokontany, "_"), "[[", 1)
 road_dist <- merge(road_dist, id_match, by = c("Fokontany","Commune"))
 road_dist <- select(road_dist, -c(Fokontany,Commune,commune_fokotony))
 
-t_min <- read.csv('tMin_tall.csv')
-names(t_min)[names(t_min) == "OBJEC"] <- "ID"
-t_min$Date[t_min$Date == 'tmn_201410'] <- 'tmn_2014_10'
-t_min$Date[t_min$Date == 'tmn_201411'] <- 'tmn_2014_11'
-t_min$Date[t_min$Date == 'tmn_201510'] <- 'tmn_2015_10'
-t_min$Date[t_min$Date == 'tmn_201511'] <- 'tmn_2015_11'
-t_min$Date[t_min$Date == 'tmn_201610'] <- 'tmn_2016_10'
-t_min$Date[t_min$Date == 'tmn_201611'] <- 'tmn_2016_11'
-t_min$Date[t_min$Date == 'tmn_201710'] <- 'tmn_2017_10'
-t_min$Date[t_min$Date == 'tmn_201711'] <- 'tmn_2017_11'
-t_min$year <- sapply(strsplit(t_min$Date,'_'), "[[", 2)
-t_min$month <- sapply(strsplit(t_min$Date,'_'), "[[", 3)
-t_min$year <- strtoi(t_min$year)
-t_min$month <- strtoi(t_min$month) + 1
-t_min <- subset(t_min, select = -c(LIB_F,X, Date))
-
-t_max <- read.csv('tMax_tall.csv')
-names(t_max)[names(t_max) == "OBJEC"] <- "ID"
-t_max$Date[t_max$Date == 'tmx_201410'] <- 'tmx_2014_10'
-t_max$Date[t_max$Date == 'tmx_201411'] <- 'tmx_2014_11'
-t_max$Date[t_max$Date == 'tmx_201510'] <- 'tmx_2015_10'
-t_max$Date[t_max$Date == 'tmx_201511'] <- 'tmx_2015_11'
-t_max$Date[t_max$Date == 'tmx_201610'] <- 'tmx_2016_10'
-t_max$Date[t_max$Date == 'tmx_201611'] <- 'tmx_2016_11'
-t_max$Date[t_max$Date == 'tmx_201710'] <- 'tmx_2017_10'
-t_max$Date[t_max$Date == 'tmx_201711'] <- 'tmx_2017_11'
-t_max$year <- sapply(strsplit(t_max$Date,'_'), "[[", 2)
-t_max$month <- sapply(strsplit(t_max$Date,'_'), "[[", 3)
-t_max$year <- strtoi(t_max$year)
-t_max$month <- strtoi(t_max$month) + 1
-t_max <- subset(t_max, select = -c(LIB_F,X, Date))
-
 p <- read.csv('p_tall.csv')
 names(p)[names(p) == "OBJEC"] <- "ID"
 p$year <- sapply(strsplit(p$Date,'_'), "[[", 2)
@@ -213,7 +181,6 @@ malaria <- merge(malaria, dist_forest, by = "ID")
 malaria <- merge(malaria, forest_frag, by = "ID")
 malaria <- merge(malaria, edge_wide, by = "ID")
 malaria <- merge(malaria, road_dist, by = "ID")
-
 
 ## Merge deforestation ##
 
@@ -240,7 +207,8 @@ monthly_lag$month[monthly_lag$month == 13] <- rep(1,length(monthly_lag$month[mon
 monthly_lag <- rbind(monthly[monthly$year == 2014 & monthly$month == 1,], monthly_lag)
 monthly_lag <- monthly_lag[monthly_lag$year != 2018,]
 names(monthly_lag) <- c('ID','year','month',"NDWI_mean_lag","NDWI_max_lag","NDWI_min_lag","LST_C_mean_lag",
-                        "LST_C_max_lag","LST_C_min_lag","Precipitation_lag","malaria_total_prop_lag","malaria_u5_prop_lag")
+                        "LST_C_max_lag","LST_C_min_lag","LST_C_mean_lag_squared", "LST_C_max_lag_squared",
+                        "LST_C_min_lag_squared","Precipitation_lag","malaria_total_prop_lag","malaria_u5_prop_lag")
 
 monthly_lag2 <- monthly_lag
 monthly_lag2$month <- monthly_lag2$month + 1
@@ -249,13 +217,14 @@ monthly_lag2$month[monthly_lag2$month == 13] <- rep(1,length(monthly_lag2$month[
 monthly_lag2 <- rbind(monthly_lag[monthly_lag$year == 2014 & monthly_lag$month == 1,], monthly_lag2)
 monthly_lag2 <- monthly_lag2[monthly_lag2$year != 2018,]
 names(monthly_lag2) <- c('ID','year','month',"NDWI_mean_lag2","NDWI_max_lag2","NDWI_min_lag2","LST_C_mean_lag2",
-                        "LST_C_max_lag2","LST_C_min_lag2","Precipitation_lag2","malaria_total_prop_lag2","malaria_u5_prop_lag2")
+                         "LST_C_max_lag2","LST_C_min_lag2","LST_C_mean_lag2_squared", "LST_C_max_lag2_squared",
+                         "LST_C_min_lag2_squared","Precipitation_lag2","malaria_total_prop_lag2","malaria_u5_prop_lag2")
 
 malaria <- merge(malaria, monthly_lag, by = c("ID","year","month"))
 malaria <- merge(malaria, monthly_lag2,by = c("ID","year","month"))
 
 # Merge wealth
-malaria <- merge(malaria, wealth[wealth$year != 2018,],by = c("ID","year","month"),all.x = TRUE)
+malaria <- merge(malaria, wealth[wealth$year != 2018,], by = c("ID","year","month"),all.x = TRUE)
 
 ## Additional data processing ##
 
@@ -285,6 +254,17 @@ malaria <- malaria[malaria$LST_C_min_lag2 > -5,]
 #malaria <- malaria[malaria$LST_C_max_lag2 < 50,]
 malaria$LST_C_max_lag2[malaria$LST_C_max_lag2 > 50] <- 50
 
+## Replace NAs with 0 for some forest variables
 
+malaria$no_patches_forest[is.na(malaria$no_patches_forest)] <- 0
+malaria$forest_patch_area[is.na(malaria$forest_patch_area)] <- 0
+malaria$total_forest_area[is.na(malaria$total_forest_area)] <- 0
+malaria$edge_forest[is.na(malaria$edge_forest)] <- 0
+
+## Calculate forest perimeter to area ratio
+
+malaria$periToArea <- malaria$edge_forest/malaria$total_forest_area
+malaria$periToArea[malaria$periToArea == Inf] <- 0
+malaria$periToArea[is.na(malaria$periToArea)] <- 0
 
 write.csv(malaria, 'malaria.csv')

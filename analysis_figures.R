@@ -132,6 +132,16 @@ plot(malaria.per.month)
 # Top 7 months with high malaria incidence (above 25 cases per thousand people). 
 malaria.norm.high.season <- malaria.norm[(malaria.norm$month > 10 | malaria.norm$month < 6),]
 
+malaria.norm.high.season$season <- NaN
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2014 & malaria.norm.high.season$month %in% c(1,2,3,4,5)] <- 0
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2014 & malaria.norm.high.season$month %in% c(11,12)] <- 1
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2015 & malaria.norm.high.season$month %in% c(1,2,3,4,5)] <- 1
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2015 & malaria.norm.high.season$month %in% c(11,12)] <- 2
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2016 & malaria.norm.high.season$month %in% c(1,2,3,4,5)] <- 2
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2016 & malaria.norm.high.season$month %in% c(11,12)] <- 3
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2017 & malaria.norm.high.season$month %in% c(1,2,3,4,5)] <- 3
+malaria.norm.high.season$season[malaria.norm.high.season$year == 2017 & malaria.norm.high.season$month %in% c(11,12)] <- 4
+
 high.season.averaged <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
 high.season.averaged$malaria_total_pt <- scale(log10(high.season.averaged$malaria_total_pt + 0.5))
 high.season.averaged$malaria_u5_pt <- scale(log10(high.season.averaged$malaria_u5_pt + 0.5))

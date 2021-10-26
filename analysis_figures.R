@@ -48,6 +48,13 @@ load_packages <- function(){
   library(RColorBrewer)
   library(viridis)
   library(tidyr)
+  library(raster)
+  library(rasterVis)
+  library(purrr)
+  library(cowplot)
+  library(wesanderson)
+  library(grid)
+  library(gridGraphics)
   
 }
 load_packages()
@@ -330,6 +337,80 @@ save(best.model.4, file = 'best.model')
 
 load('best.model')
 
+## Experimentation
+
+summary(best.model.4)
+AICc(best.model.4)
+
+best.formula.noyear <- as.formula('malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + wscore.n + 
+toForest_meanDist + edge_forest + loss_3y + LST_C_min_lag + LST_C_max_lag +
+                            LST_C_min_lag_squared + LST_C_max_lag_squared + Precipitation_lag + (1|ID) + (1|month)')
+
+best.model.noyear <- glmmTMB(best.formula.noyear, data = malaria.norm.high.season, ziformula = ~., family = "nbinom2",na.action="na.exclude")
+summary(best.model.noyear)
+AICc(best.model.noyear)
+
+## Figure 0 - Map of study sites
+
+fkt.bound <- st_read('~/Documents/Stanford/Research /Malaria Project/Data/spatial_datasets/Limite FKT/Limite_FKT_Distr_Ifanadiana.shp')
+
+best.predictions <- predict(best.model.4, type = 'response')
+malaria.norm.high.season.pred <- malaria.norm.high.season
+malaria.norm.high.season.pred$pred <- best.predictions
+malaria.norm.high.season.pred$diff <- malaria.norm.high.season.pred$malaria_total_pt - malaria.norm.high.season.pred$pred
+
+high.season.pred.averaged <- aggregate(malaria.norm.high.season.pred,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
+
+fkt.bound <- dplyr::select(fkt.bound, c(ID, geometry))
+
+high.season.pred.averaged$ID <- as.numeric(as.character(high.season.pred.averaged$Group.1))
+
+map.pred <- inner_join(high.season.pred.averaged, fkt.bound, by = "ID")
+
+write.csv(high.season.pred.averaged[,c('malaria_total_pt','ID')], 'malaria_pred.csv')
+
+centroids <- st_read("~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets/dd-prediction-pivot-master/data/spatial/study_area/projected-29738/cluster_centroids.shp") %>%
+  mutate(cluster_id = as.factor(cluster_id))
+
+roads <- st_read("~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets/dd-prediction-pivot-master/data/spatial/admin/roads.shp")
+
+#spatial data
+commune <- st_read("~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets/dd-prediction-pivot-master/data/spatial/admin/projected-29738/communes.shp") %>%
+  dplyr::select(commune = LIB_COM)
+
+roads <- st_transform(roads, crs(commune)) %>%
+  dplyr::select(CLASS, SURFTYPE)
+#crop to commune extents
+roads <- st_intersection(roads, commune) %>%
+  mutate(paved = ifelse(SURFTYPE=="Paved", 2, 1))
+
+st_write(roads, 'road_cropped.shp')
+
+hc <- st_read("~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets/dd-prediction-pivot-master/data/spatial/health/Centre-de-santé_Ifanadiana.shp")
+hc <- st_transform(hc, crs(commune)) %>%
+  dplyr::select(commune = LIB_COM, csb_type = LIB_INFRA, pivot_supp = PIVOT_SUPP)
+
+broad_view <- readPNG('~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets/fig1_panelA.png')
+
+land_use_image <- readPNG('~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets/fig1_panelB.png')
+plot.new()
+rasterImage(land_use_image,0,0,1,1)
+
+fig1A <- ggplot() + background_image(broad_view) + 
+  coord_fixed(ratio = 7.07/8.83) +
+  theme_minimal()
+
+fig1B <- ggplot() + background_image(land_use_image) + 
+  coord_fixed(ratio = 7.33/11.25) +
+  theme_minimal()
+
+
+  #theme(plot.margin = margin(t=2.5, l=1, r=1, b=2.5, unit = "cm"))
+fig1.3
+
+myPPlot(ggarrange(fig1.1, fig1.2, fig1.3, fig1.4, labels = c("A","B","C","D"),nrow = 2, ncol = 2))
+
+
 ## Figure 1 - Plot of the model predictions 
 
 best.predictions <- predict(best.model.4, type = 'response')
@@ -390,21 +471,21 @@ myPPlot(figure1)
 
 # Out of sample predictions
 
-high.season.2014.2016 <- malaria.norm.high.season[malaria.norm.high.season$year < 2017,]
-high.season.2017 <- malaria.norm.high.season[malaria.norm.high.season$year == 2017,]
+high.season.train <- malaria.norm.high.season[malaria.norm.high.season$season %in% c(1,2),]
+high.season.test <- malaria.norm.high.season[malaria.norm.high.season$season %in% c(3),]
 
-formula.2014.2016 <- as.formula('malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + 
+formula.train <- as.formula('malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + 
   wscore.n + toForest_meanDist + edge_forest + loss_3y + LST_C_min_lag + 
   LST_C_max_lag + LST_C_min_lag_squared + LST_C_max_lag_squared + 
-  Precipitation_lag + (1 | ID) + (1 | month)')
+  Precipitation_lag + (1 | ID)')
 
-best.model.2014.2016 <- glmmTMB(formula.2014.2016, data = high.season.2014.2016, ziformula = ~., family = "nbinom2",na.action="na.exclude")
-summary(best.model.2014.2016)
+best.model.train <- glmmTMB(formula.train, data = high.season.train, ziformula = ~., family = "nbinom2",na.action="na.exclude")
+summary(best.model.train)
 
-high.season.2017$pred <- predict(best.model.2014.2016, high.season.2017, type = 'response')
-high.season.2017$diff <- high.season.2017$malaria_total_pt - high.season.2017$pred
+high.season.test$pred <- predict(best.model.train, high.season.test, type = 'response')
+high.season.test$diff <- high.season.test$malaria_total_pt - high.season.test$pred
 
-high.season.2017.av <- aggregate(high.season.2017,by=list(high.season.2017$ID), mean, na.rm = TRUE)
+high.season.test.av <- aggregate(high.season.test,by=list(high.season.test$ID), mean, na.rm = TRUE)
 
 setwd("~/Documents/Stanford/Research /Malaria Project/Data/spatial_datasets/Limite FKT")
 fkt.bound <- st_read('Limite_FKT_Distr_Ifanadiana.shp')
@@ -412,25 +493,25 @@ setwd("~/Documents/Stanford/Research /Malaria Project/Data/csv_datasets")
 
 fkt.bound <- dplyr::select(fkt.bound, c(ID, geometry))
 
-high.season.2017.av$ID <- as.numeric(as.character(high.season.2017.av$Group.1))
+high.season.test.av$ID <- as.numeric(as.character(high.season.test.av$Group.1))
 
-map.pred.2017 <- inner_join(high.season.2017.av, fkt.bound, by = "ID")
+map.pred.test <- inner_join(high.season.test.av, fkt.bound, by = "ID")
 
-plot.pred <- ggplot(map.pred.2017) +
+plot.pred <- ggplot(map.pred.test) +
   geom_sf(aes(fill = pred, geometry = geometry))+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4', limits = c(0,262)) + 
   labs(title = "Predicted incidence", fill = 'Per thousand') +
   theme(plot.title = element_text(face = 'bold', hjust = 0.5,size=12))
 
-plot.obs <- ggplot(map.pred.2017) +
+plot.obs <- ggplot(map.pred.test) +
   geom_sf(aes(fill = malaria_total_pt, geometry = geometry))+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,262)) + 
   labs(title = "Observed incidence", fill = 'Per thousand') +
   theme(plot.title = element_text(face = 'bold', hjust = 0.5,size=12))
 
-plot.diff <- ggplot(map.pred.2017) +
+plot.diff <- ggplot(map.pred.test) +
   geom_sf(aes(fill = diff, geometry = geometry))+
   blank() +
   labs(title = "Difference", fill = 'Per thousand')  +
@@ -438,7 +519,7 @@ plot.diff <- ggplot(map.pred.2017) +
   theme(plot.title = element_text(face = 'bold', hjust = 0.5, size=12))
 
 figure1c <- ggarrange(plot.obs, plot.pred, plot.diff, nrow = 1, ncol = 3)
-figure1c
+myPPlot(figure1c)
 
 ## Figure 2 - Plot of the model coefficients
 param <- parameters(best.model.4)
@@ -672,68 +753,51 @@ myPPlot(ggarrange(plot.wealth, plot.dist, plot.bednet, plot.res, plot.rice, plot
 
 ## Extra plots - Malaria in different years
 
-malaria.2014 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$year == 2014,]
-malaria.2015 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$year == 2015,]
-malaria.2016 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$year == 2016,]
-malaria.2017 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$year == 2017,]
+malaria.0 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$season == 0,]
+malaria.1 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$season == 1,]
+malaria.2 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$season == 2,]
+malaria.3 <- malaria.norm.high.season.pred[malaria.norm.high.season.pred$season == 3,]
 
-averaged.2014 <- aggregate(malaria.2014,by=list(malaria.2014$ID), mean, na.rm = TRUE)
-averaged.2015 <- aggregate(malaria.2015,by=list(malaria.2015$ID), mean, na.rm = TRUE)
-averaged.2016 <- aggregate(malaria.2016,by=list(malaria.2016$ID), mean, na.rm = TRUE)
-averaged.2017 <- aggregate(malaria.2017,by=list(malaria.2017$ID), mean, na.rm = TRUE)
+averaged.0 <- aggregate(malaria.0,by=list(malaria.0$ID), mean, na.rm = TRUE)
+averaged.1 <- aggregate(malaria.1,by=list(malaria.1$ID), mean, na.rm = TRUE)
+averaged.2 <- aggregate(malaria.2,by=list(malaria.2$ID), mean, na.rm = TRUE)
+averaged.3 <- aggregate(malaria.3,by=list(malaria.3$ID), mean, na.rm = TRUE)
 
-averaged.2014$ID <- as.numeric(as.character(averaged.2014$Group.1))
-averaged.2015$ID <- as.numeric(as.character(averaged.2015$Group.1))
-averaged.2016$ID <- as.numeric(as.character(averaged.2016$Group.1))
-averaged.2017$ID <- as.numeric(as.character(averaged.2017$Group.1))
+averaged.0$ID <- as.numeric(as.character(averaged.0$Group.1))
+averaged.1$ID <- as.numeric(as.character(averaged.1$Group.1))
+averaged.2$ID <- as.numeric(as.character(averaged.2$Group.1))
+averaged.3$ID <- as.numeric(as.character(averaged.3$Group.1))
 
-map.2014 <- inner_join(averaged.2014, fkt.bound, by = "ID")
-map.2015 <- inner_join(averaged.2015, fkt.bound, by = "ID")
-map.2016 <- inner_join(averaged.2016, fkt.bound, by = "ID")
-map.2017 <- inner_join(averaged.2017, fkt.bound, by = "ID")
+map.0 <- inner_join(averaged.0, fkt.bound, by = "ID")
+map.1 <- inner_join(averaged.1, fkt.bound, by = "ID")
+map.2 <- inner_join(averaged.2, fkt.bound, by = "ID")
+map.3 <- inner_join(averaged.3, fkt.bound, by = "ID")
 
-
-plot.2014 <- ggplot(map.2014) +
-  geom_sf(aes(fill = malaria_total_pt , geometry = geometry), lwd = 0)+
-  blank() +
-  scale_fill_gradient(low = 'white', high = 'royalblue4', limits = c(0,400)) + 
-  labs(title = '2014', fill = 'Observed') +
-  theme(legend.title=element_text(size=7),legend.text=element_text(size=7), plot.title = element_text(face = 'bold', hjust = 0.5,size=9)) + 
-  guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
-
-plot.2015 <- ggplot(map.2015) +
+plot.1 <- ggplot(map.1) +
   geom_sf(aes(fill = malaria_total_pt , geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,300)) + 
-  labs(title = '2015', fill = 'Observed') +
+  labs(title = 'Season 1 (2014-2015)', fill = 'Observed') +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7), plot.title = element_text(face = 'bold', hjust = 0.5,size=9)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2016 <- ggplot(map.2016) +
+plot.2 <- ggplot(map.2) +
   geom_sf(aes(fill = malaria_total_pt , geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,300)) + 
-  labs(title = '2016', fill = 'Observed') +
+  labs(title = 'Season 2 (2015-2016)', fill = 'Observed') +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7), plot.title = element_text(face = 'bold', hjust = 0.5,size=9)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2017 <- ggplot(map.2017) +
+plot.3 <- ggplot(map.3) +
   geom_sf(aes(fill = malaria_total_pt , geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,300)) + 
-  labs(title = '2017', fill = 'Observed') +
+  labs(title = 'Season 3 (2016-2017)', fill = 'Observed') +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7), plot.title = element_text(face = 'bold', hjust = 0.5,size=9)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2014.pred <- ggplot(map.2014) +
-  geom_sf(aes(fill = pred , geometry = geometry), lwd = 0)+
-  blank() +
-  scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,400)) + 
-  labs(fill = 'Predicted') +
-  theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
-  guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
-
-plot.2015.pred <- ggplot(map.2015) +
+plot.1.pred <- ggplot(map.1) +
   geom_sf(aes(fill = pred , geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,300)) + 
@@ -741,7 +805,7 @@ plot.2015.pred <- ggplot(map.2015) +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2016.pred <- ggplot(map.2016) +
+plot.2.pred <- ggplot(map.2) +
   geom_sf(aes(fill = pred , geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,300)) + 
@@ -749,7 +813,7 @@ plot.2016.pred <- ggplot(map.2016) +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2017.pred <- ggplot(map.2017) +
+plot.3.pred <- ggplot(map.3) +
   geom_sf(aes(fill = pred , geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient(low = 'white', high = 'royalblue4',limits = c(0,300)) + 
@@ -757,21 +821,7 @@ plot.2017.pred <- ggplot(map.2017) +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-
-
-
-#ggarrange(plot.2014, plot.2015, plot.2016, plot.2017, plot.2014.pred, plot.2015.pred, plot.2016.pred, plot.2017.pred, nrow = 2, ncol = 4)
-
-
-plot.2014.diff <- ggplot(map.2014) +
-  geom_sf(aes(fill = diff, geometry = geometry), lwd = 0)+
-  blank() +
-  scale_fill_gradient2(limits = c(-250,250)) +
-  labs(fill = 'Difference') +
-  theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
-  guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
-
-plot.2015.diff <- ggplot(map.2015) +
+plot.1.diff <- ggplot(map.1) +
   geom_sf(aes(fill = diff, geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient2(limits = c(-150,150)) +
@@ -779,7 +829,7 @@ plot.2015.diff <- ggplot(map.2015) +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2016.diff <- ggplot(map.2016) +
+plot.2.diff <- ggplot(map.2) +
   geom_sf(aes(fill = diff, geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient2(limits = c(-150,150)) +
@@ -787,7 +837,7 @@ plot.2016.diff <- ggplot(map.2016) +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-plot.2017.diff <- ggplot(map.2017) +
+plot.3.diff <- ggplot(map.3) +
   geom_sf(aes(fill = diff, geometry = geometry), lwd = 0)+
   blank() +
   scale_fill_gradient2(limits = c(-150,150)) +
@@ -795,5 +845,5 @@ plot.2017.diff <- ggplot(map.2017) +
   theme(legend.title=element_text(size=7),legend.text=element_text(size=7)) + 
   guides(fill = guide_colourbar(barwidth = 0.7, barheight = 5))
 
-ggarrange(plot.2014, plot.2015, plot.2016, plot.2017, plot.2014.pred, plot.2015.pred, plot.2016.pred, plot.2017.pred, plot.2014.diff, plot.2015.diff, plot.2016.diff, plot.2017.diff, nrow = 3, ncol = 4)
+myPPlot(ggarrange(plot.1, plot.2, plot.3, plot.1.pred, plot.2.pred, plot.3.pred, plot.1.diff, plot.2.diff, plot.3.diff, nrow = 3, ncol = 3))
 

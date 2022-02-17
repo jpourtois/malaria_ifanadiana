@@ -55,10 +55,10 @@ deforestation_all <- merge(deforestation_all, id_match,by.x = c("Fokontany", "LI
 
 # Deforestation over the previous 10 years
 deforest_10y <- data_frame('ID' = deforestation_all$ID)
-deforest_10y$y_2014 <- apply(select(deforestation_all, X_loss_04me:X_loss_13me), 1, sum, na.rm = TRUE)
-deforest_10y$y_2015 <- apply(select(deforestation_all, X_loss_05me:X_loss_14me), 1, sum, na.rm = TRUE)
-deforest_10y$y_2016 <- apply(select(deforestation_all, X_loss_06me:X_loss_15me), 1, sum, na.rm = TRUE)
-deforest_10y$y_2017 <- apply(select(deforestation_all, X_loss_07me:X_loss_16me), 1, sum, na.rm = TRUE)
+deforest_10y$y_2014 <- apply(dplyr::select(deforestation_all, X_loss_04me:X_loss_13me), 1, sum, na.rm = TRUE)
+deforest_10y$y_2015 <- apply(dplyr::select(deforestation_all, X_loss_05me:X_loss_14me), 1, sum, na.rm = TRUE)
+deforest_10y$y_2016 <- apply(dplyr::select(deforestation_all, X_loss_06me:X_loss_15me), 1, sum, na.rm = TRUE)
+deforest_10y$y_2017 <- apply(dplyr::select(deforestation_all, X_loss_07me:X_loss_16me), 1, sum, na.rm = TRUE)
 deforest_10y <- gather(deforest_10y, year, loss_10y, y_2014:y_2017)
 deforest_10y$year <- revalue(deforest_10y$year, c("y_2014"= "2014", "y_2015"="2015", "y_2016" = "2016", 
                                                     "y_2017" = "2017"))
@@ -66,10 +66,10 @@ deforest_10y$year <- strtoi(deforest_10y$year)
 
 # Deforestation over the previous three years
 deforest_3y <- data_frame('ID' = deforestation_all$ID)
-deforest_3y$y_2014 <- apply(select(deforestation_all, X_loss_11me:X_loss_13me), 1, sum, na.rm = TRUE)
-deforest_3y$y_2015 <- apply(select(deforestation_all, X_loss_12me:X_loss_14me), 1, sum, na.rm = TRUE)
-deforest_3y$y_2016 <- apply(select(deforestation_all, X_loss_13me:X_loss_15me), 1, sum, na.rm = TRUE)
-deforest_3y$y_2017 <- apply(select(deforestation_all, X_loss_14me:X_loss_16me), 1, sum, na.rm = TRUE)
+deforest_3y$y_2014 <- apply(dplyr::select(deforestation_all, X_loss_11me:X_loss_13me), 1, sum, na.rm = TRUE)
+deforest_3y$y_2015 <- apply(dplyr::select(deforestation_all, X_loss_12me:X_loss_14me), 1, sum, na.rm = TRUE)
+deforest_3y$y_2016 <- apply(dplyr::select(deforestation_all, X_loss_13me:X_loss_15me), 1, sum, na.rm = TRUE)
+deforest_3y$y_2017 <- apply(dplyr::select(deforestation_all, X_loss_14me:X_loss_16me), 1, sum, na.rm = TRUE)
 deforest_3y <- gather(deforest_3y, year, loss_3y, y_2014:y_2017)
 deforest_3y$year <- revalue(deforest_3y$year, c("y_2014"= "2014", "y_2015"="2015", "y_2016" = "2016", 
                                                             "y_2017" = "2017"))
@@ -160,7 +160,7 @@ road_dist$Fokontany <- gsub('^.', '', road_dist$Fokontany)
 road_dist$Fokontany <- gsub('_', ' ', road_dist$Fokontany)
 road_dist$Fokontany <- sapply(str_split(road_dist$Fokontany, "_"), "[[", 1)
 road_dist <- merge(road_dist, id_match, by = c("Fokontany","Commune"))
-road_dist <- select(road_dist, -c(Fokontany,Commune,commune_fokotony))
+road_dist <- dplyr::select(road_dist, -c(Fokontany,Commune,commune_fokotony))
 
 p <- read.csv('p_tall.csv')
 names(p)[names(p) == "OBJEC"] <- "ID"
@@ -249,6 +249,11 @@ malaria$time <- malaria$month + (malaria$year - 2014)*12
 
 ## Remove messed up temperatures
 
+malaria <- malaria[malaria$LST_C_mean_lag > 0,]
+malaria <- malaria[malaria$LST_C_min_lag > -5,]
+#malaria <- malaria[malaria$LST_C_max_lag2 < 50,]
+malaria$LST_C_max_lag[malaria$LST_C_max_lag > 50] <- 50
+
 malaria <- malaria[malaria$LST_C_mean_lag2 > 0,]
 malaria <- malaria[malaria$LST_C_min_lag2 > -5,]
 #malaria <- malaria[malaria$LST_C_max_lag2 < 50,]
@@ -267,4 +272,4 @@ malaria$periToArea <- malaria$edge_forest/malaria$total_forest_area
 malaria$periToArea[malaria$periToArea == Inf] <- 0
 malaria$periToArea[is.na(malaria$periToArea)] <- 0
 
-write.csv(malaria, 'malaria.csv')
+write.csv(malaria, 'malaria.csv', row.names=FALSE)

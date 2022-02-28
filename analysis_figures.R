@@ -414,6 +414,7 @@ hist(tapply(malaria_raw$LST_C_mean_lag[malaria_raw$year == 2016], malaria_raw$ID
 ##### General analysis #####
 
 load('best.model')
+summary(best.model)
 
 # Poisson dist
 poisson.model <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb +  
@@ -1062,6 +1063,39 @@ graph [fontsize = 10, overlap = TRUE]
 
 ")
 
+##### Table S2 - Model coefficients ####
+
+best.summary <- summary(best.model)
+cond.coef <- best.summary$coefficients$cond[,1]
+cond.se <- best.summary$coefficients$cond[,2]
+zi.coef <- best.summary$coefficients$zi[,1]
+zi.se <- best.summary$coefficients$zi[,2]
+names.var <- c('Intercept', 'Bed net use', 'Residential Area','Rice fields','Distance to HC',
+               'Wealth score','Forest loss','Precipitation','Mean LST','Min LST','Mean LST index')
+
+coef.table <- hux(
+  Variable = names.var,
+  cond.est  = cond.coef,
+  cond.error = cond.se,
+  zi.est = zi.coef,
+  zi.error = zi.se
+)
+
+coef.table <- coef.table %>% 
+  set_contents(1, 2:5, c("Estimate", "SE", "Estimate", "SE")) %>% 
+  insert_row("", "Conditional", "", "Zero-inflated", "", after = 0) %>% 
+  merge_cells(1, 2:3) %>% 
+  merge_cells(1, 4:5) %>% 
+  set_bold(1, everywhere) %>% 
+  set_bold(2, everywhere) %>%
+  set_align(1, everywhere, "center") %>%
+  set_align(2, everywhere, "center") %>%
+  set_bottom_border(row = 2, col = everywhere)
+
+coef.table
+
+quick_docx(coef.table, file = 'coef_table.docx')
+
 ##### Figure S1 - make map of all variables #####
 
 fkt.bound <- st_read('~/Documents/Stanford/Research /Malaria Project/Data/spatial_datasets/Limite FKT/Limite_FKT_Distr_Ifanadiana.shp')
@@ -1240,7 +1274,7 @@ myPPlot(ggarrange(plot.wealth, plot.dist, plot.bednet, plot.res, plot.rice, plot
           plot.temp.max.squared, plot.temp.min.squared, plot.prec))
 
 
-##### Figure S2
+##### Figure S2 #####
 
 malaria.per.month <- aggregate(malaria_raw,by=list(malaria_raw$ID,malaria_raw$month), mean, na.rm = TRUE)
 climate.per.month <- aggregate(malaria.per.month,by=list(malaria.per.month$month), mean, na.rm = TRUE)

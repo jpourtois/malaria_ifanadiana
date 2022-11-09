@@ -421,11 +421,11 @@ fig_map_malaria <- function(averaged.raw){
   
   # Select and export paved roads
   road_paved <- roads[roads$paved == 1,]
-  st_write(road_paved, 'road_paved_v3.shp')
+  #st_write(road_paved, 'road_paved_v3.shp')
   
   # Select and export unpaved roads
   roads_unpaved <- roads[roads$paved == 0,]
-  st_write(roads_unpaved, 'road_unpaved_v3.shp', append = FALSE)
+  #st_write(roads_unpaved, 'road_unpaved_v3.shp', append = FALSE)
   
   ## Make Figure 1A and 1B
   
@@ -443,11 +443,12 @@ fig_map_malaria <- function(averaged.raw){
     coord_fixed(ratio = 16.2/20.44) + # Change image ratio if needed
     theme_minimal()
   
-  fig1AB <- ggarrange(fig1A, fig1B, labels = c("A","B"))
+  fig1AB <- ggarrange(fig1A, fig1B, labels = c("A","B"), font.label = list(size = 10))
   myPPlot(fig1AB)
   
   # Save tiff file
   ggsave("fig1AB.pdf",fig1AB, units="mm",width=225, height= 112, dpi=300)
+  ggsave("Fig1.tiff",fig1AB, units="in",width=5.2, height= 2.4, dpi=300)
   
 }
 
@@ -545,9 +546,10 @@ fig_coefficients <- function(best.model, malaria.norm.high.season, malaria_raw){
     labs(x = "Mean Land Surface Temperature (C)", y = "Predicted malaria incidence (p.t.)") + 
     theme_minimal()
   
-  fig2 <- ggarrange(fig2a, fig2b, widths = c(2, 1.7), labels = c('A','B'))
+  fig2 <- ggarrange(fig2a, fig2b, widths = c(2, 1.7), labels = c('A','B'),font.label = list(size = 10))
   
   ggsave("fig2.pdf",fig2, units="mm",width=250, height= 112, dpi=300)
+  ggsave("Fig2.tiff",fig2, units="in",width= 7.5, height= 3.6, dpi=300)
   
   
 }
@@ -574,9 +576,9 @@ fig_pred <- function(best.model, malaria.norm.high.season){
     scale_fill_gradient(low = 'white', high = 'royalblue4', limits = c(0,200)) + 
     labs(title = "Predicted incidence \n (per thousand)", fill = '') +
     guides(fill = guide_colourbar(barwidth = 5, barheight = 0.7)) + 
-    theme(plot.title = element_text(face = 'bold', hjust = 0.5,size=10), 
+    theme(plot.title = element_text(face = 'bold', hjust = 0.5,size=8), 
           plot.margin=margin(r=0,l=10, t=20, b=10),
-          legend.title=element_text(size=8),legend.text=element_text(size=8),
+          legend.title=element_text(size=6),legend.text=element_text(size=6),
           axis.text.x = element_blank(),
           axis.text.y = element_blank(),
           axis.ticks = element_blank(),
@@ -588,9 +590,9 @@ fig_pred <- function(best.model, malaria.norm.high.season){
     labs(title = "Predicted - Observed \n (per thousand)", fill = '')  +
     scale_fill_gradient2(limits = c(-35,35)) +
     guides(fill = guide_colourbar(barwidth = 5, barheight = 0.7)) + 
-    theme(plot.title = element_text(face = 'bold', hjust = 0.5,size=10), 
+    theme(plot.title = element_text(face = 'bold', hjust = 0.5,size=8), 
           plot.margin=margin(r=0,l=10, t=20, b=10),
-          legend.title=element_text(size=8),legend.text=element_text(size=8),
+          legend.title=element_text(size=6),legend.text=element_text(size=6),
           axis.text.x = element_blank(),
           axis.text.y = element_blank(),
           axis.ticks = element_blank(),
@@ -604,8 +606,9 @@ fig_pred <- function(best.model, malaria.norm.high.season){
   
   fig3b <- ggplot(high.season.ave, aes(x = rank.malaria, y = rank.pred)) +
     geom_point(alpha = 0.7)+
-    labs(x = "Malaria incidence (rank)", y = 'In-sample predictions (rank)') +
-    theme_minimal()
+    labs(x = "Malaria incidence (rank)", y = 'In-sample pred. (rank)') +
+    theme_minimal() +
+    theme(axis.title =element_text(size=8)) 
   
   ### Figure 3C: Out-of-sample predictions
   
@@ -628,14 +631,17 @@ fig_pred <- function(best.model, malaria.norm.high.season){
   
   fig3c <- ggplot(high.season.test.av, aes(x = rank.malaria, y = rank.pred)) +
     geom_point(alpha = 0.7)+
-    labs(x = "Malaria incidence (rank)", y = 'Out-of-sample predictions (rank)') +
-    theme_minimal()
+    labs(x = "Malaria incidence (rank)", y = 'Out-of-sample pred. (rank)') +
+    theme_minimal() +
+    theme(axis.title =element_text(size=8)) 
   
-  fig3b_3c <- ggarrange(fig3b, fig3c, nrow = 2, labels = c('B','C'), vjust = c(1,-0.1))
-  fig3 <- ggarrange(plot.pred, plot.diff, fig3b_3c, ncol = 3, labels = c('A',''))
+  fig3b_3c <- ggarrange(fig3b, fig3c, nrow = 2, labels = c('B','C'), vjust = c(1,-0.1), font.label = list(size = 10))
+  fig3 <- ggarrange(plot.pred, plot.diff, fig3b_3c, ncol = 3, labels = c('A','', ''), font.label = list(size = 10))
   fig3
   
   ggsave("fig3.pdf",fig3, units="mm",width= 200, height= 150, dpi=300)
+  ggsave("Fig3.tiff",fig3, units="in",width= 7, height= 3.5, dpi=300)
+  
   
 }
 

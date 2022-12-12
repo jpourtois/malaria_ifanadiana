@@ -20,87 +20,16 @@ load_packages <- function() {
 
 load_packages()
 
-##### 1. Functions #####
+#### 1. Load data ####
 
-transformRaw <- function(malaria_raw) {
-  
-  ### 1. Average raw data to use for variable maps
-  averaged_data_raw <- aggregate(malaria_raw,by=list(malaria_raw$ID), mean, na.rm = TRUE)
-  
-  ### 2. Normalized data set
-  malaria <- malaria_raw
-  
-  # Normalize data with log function
-  malaria <- dplyr::mutate(malaria,
-                           Residential = log10(Residential),
-                           Rice = log10(Rice),
-                           Forest = log10(Forest + 0.001),
-                           wscore.n = log10(wscore.n + 0.01),
-                           toForest_meanDist = log10(toForest_meanDist + 1),
-                           edge_forest = log10(edge_forest + 10),
-                           real.dist.csb = log10(real.dist.csb + 10),
-                           loss_3y = log10(loss_3y),
-                           loss_10y = log10(loss_10y),
-                           Precipitation_lag = log10(Precipitation_lag),
-                           Precipitation_lag2 = log10(Precipitation_lag2))
-  
-  # Further scale data
-  malaria$real.dist.csb <- scale(malaria[,'real.dist.csb'])
-  norm.var <- scale(dplyr::select(malaria, c(alt_bf:Precipitation_lag2)))
-  malaria.norm <- cbind(malaria[,c('ID','year','month','time','Population','Population.u5','malaria_total_prop',
-                                   'malaria_u5_prop','malaria_total_pt','malaria_u5_pt',
-                                   'malaria_total','malaria_u5','real.dist.csb')], norm.var)
-  
-  malaria.norm <- dplyr::select(malaria.norm, -c('LST_C_mean','LST_C_max','LST_C_min', 
-                                            'LST_C_mean_squared','LST_C_max_squared', 'LST_C_min_squared'))
-  
-  malaria.norm$ID <- as.factor(malaria.norm$ID)
-  
-  # Only keep rows with no NAs
-  malaria.norm <- malaria.norm[complete.cases(malaria.norm),]
-  
-  ### 3. Normalized data set with high season only
-  
-  # Top 7 months with high malaria incidence (above 25 cases per thousand people). 
-  malaria.norm.high.season <- malaria.norm[(malaria.norm$month > 10 | malaria.norm$month < 6),]
-  
-  # Assign seasons
-  malaria.norm.high.season$season <- NaN
-  
-  malaria.norm.high.season <- dplyr::mutate(malaria.norm.high.season,
-                                    season = replace(season, year == 2014 & month %in% c(1,2,3,4,5), 0),
-                                    season = replace(season, year == 2014 & month %in% c(11,12), 1),
-                                    season = replace(season, year == 2015 & month %in% c(1,2,3,4,5), 1),
-                                    season = replace(season, year == 2015 & month %in% c(11,12), 2),
-                                    season = replace(season, year == 2016 & month %in% c(1,2,3,4,5), 2),
-                                    season = replace(season, year == 2016 & month %in% c(11,12),3),
-                                    season = replace(season, year == 2017 & month %in% c(1,2,3,4,5), 3),
-                                    season = replace(season, year == 2017 & month %in% c(11,12), 4))
-  
-  malaria.norm.high.season$season <- as.factor(malaria.norm.high.season$season)
-  
-  ### 4. Averaged normalized data set with high season only
-  high.season.averaged <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
-  
-  return(list('averaged.raw' = averaged_data_raw, 'malaria.norm' = malaria.norm, 
-              'malaria.norm.high.season' = malaria.norm.high.season, 'high.season.averaged' = high.season.averaged))
-  
-}
+malaria_raw <- read.csv('output/malaria_v3.csv')
 
-#### 2. Data loading and final processing ####
+averaged.raw <- read.csv('output/averaged_raw.csv')
+malaria.norm <- read.csv('output/malaria_norm.csv')
+malaria.norm.high.season <- read.csv('output/malaria_norm_high_season.csv')
+high.season.averaged <- read.csv('output/high_season_averaged.csv')
 
-setwd("~/Documents/Stanford/Research/Malaria Project/Data/csv_datasets")
-
-malaria_raw <- read.csv('malaria_v3.csv')
-
-transformed_data <- transformRaw(malaria_raw)
-
-averaged.raw <- transformed_data$averaged.raw
-malaria.norm <- transformed_data$malaria.norm
-malaria.norm.high.season <- transformed_data$malaria.norm.high.season
-high.season.averaged <- transformed_data$high.season.averaged
-
-#### 3. Distribution selection ####
+#### 2. Distribution selection ####
 
 ## We explore 4 distributions that are appropriate for count data: 
 ## 1. Poisson distribution
@@ -108,7 +37,7 @@ high.season.averaged <- transformed_data$high.season.averaged
 ## 3. Negative-binomial distribution
 ## 4. Zero-inflated negative-binomial distribution
 
-## 3.1 Poisson distribution
+## 2.1 Poisson distribution
 poisson.all <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + toForest_meanDist +
                          edge_forest + wscore.n + loss_3y + loss_10y + Precipitation_lag + LST_C_mean_lag +  
                          LST_C_min_lag + LST_C_max_lag + LST_C_mean_lag_squared + LST_C_min_lag_squared+ LST_C_max_lag_squared +
@@ -119,7 +48,7 @@ poisson.all <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real
 simulateResiduals(poisson.all, plot = T)
 testUniformity(poisson.all) ## KS test and outlier test have p = 0 (Deviation is significant)
 
-## 3.2 ZI Poisson distribution
+## 2.2 ZI Poisson distribution
 zipoisson.all <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + toForest_meanDist +
                          edge_forest + wscore.n + loss_3y + loss_10y + Precipitation_lag + LST_C_mean_lag +  
                          LST_C_min_lag + LST_C_max_lag + LST_C_mean_lag_squared + LST_C_min_lag_squared+ LST_C_max_lag_squared +
@@ -130,7 +59,7 @@ zipoisson.all <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + re
 simulateResiduals(zipoisson.all, plot = T)
 testUniformity(zipoisson.all) ## KS test and outlier test have p = 0 (Deviation is significant)
 
-## 3.3 Negative-binomial distribution
+## 2.3 Negative-binomial distribution
 nb.all <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + toForest_meanDist +
                          edge_forest + wscore.n + loss_3y + loss_10y + Precipitation_lag + LST_C_mean_lag +  
                          LST_C_min_lag + LST_C_max_lag + LST_C_mean_lag_squared + LST_C_min_lag_squared+ LST_C_max_lag_squared +
@@ -142,7 +71,7 @@ simulateResiduals(nb.all, plot = T)
 testUniformity(nb.all) ## KS test, Dispersion test and outlier test have p = 0 (Deviation is significant)
 testZeroInflation(nb.all) # Significant deviation
 
-## 3.4 ZI negative-binomial distribution (ZINB)
+## 2.4 ZI negative-binomial distribution (ZINB)
 zinb.all <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + toForest_meanDist +
                     edge_forest + wscore.n + loss_3y + loss_10y + Precipitation_lag + LST_C_mean_lag +  
                     LST_C_min_lag + LST_C_max_lag + LST_C_mean_lag_squared + LST_C_min_lag_squared+ LST_C_max_lag_squared +
@@ -160,9 +89,9 @@ AICc(poisson.all,zipoisson.all, nb.all, zinb.all)
 
 ### --> ZINB will be used for the rest of the analysis.
 
-#### 4. Variable selection ####
+#### 3. Variable selection ####
 
-### 4.1 First selection 
+### 3.1 First selection 
 
 # All variables to be considered for combinations
 variable.vector.2 <- c('toForest_meanDist','edge_forest',
@@ -235,7 +164,7 @@ hist(aic.matrix.2,20)
 glm.avg <- model.avg(glm.model.2)
 summary(glm.avg)
 
-### 4.2  Second step
+### 3.2  Second step
 
 variable.vector.3 <- c('LST_C_mean_lag','LST_C_min_lag','LST_C_max_lag',
                        'LST_C_mean_lag_squared')

@@ -207,6 +207,7 @@ monthly <- merge(temp_surface, p, by = c("ID","year","month"))
 malaria <- merge(malaria, monthly, by = c("ID","year","month"))
 
 # Create one-month lag 
+
 monthly_lag <- monthly
 monthly_lag$month <- monthly_lag$month + 1
 monthly_lag$year[monthly_lag$month == 13] <- monthly_lag$year[monthly_lag$month == 13] + 1

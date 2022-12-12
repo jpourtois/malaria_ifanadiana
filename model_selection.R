@@ -141,8 +141,8 @@ for (row in 1:nrow(combi.group)){
   
 }
 
-save(glm.model.2, file = 'glm.model.2.v3')
-save(aic.matrix.2, file = 'aic.matrix.2.v3')
+save(glm.model.2, file = 'output/glm.model.2.v3')
+save(aic.matrix.2, file = 'output/aic.matrix.2.v3')
 
 # 'Best' model with lowest AICc
 
@@ -201,8 +201,8 @@ for (row in 1:nrow(combi.group)){
   
 }
 
-save(glm.model.3, file = 'glm.model.3.v3')
-save(aic.matrix.3, file = 'aic.matrix.3.v3')
+save(glm.model.3, file = 'output/glm.model.3.v3')
+save(aic.matrix.3, file = 'output/aic.matrix.3.v3')
 
 ## Final 'best' model
 
@@ -211,7 +211,7 @@ best.model <- glm.model.3[[which.min(aic.matrix.3)]]
 AICc(best.model)
 summary(best.model)
 
-save(best.model, file = 'best.model.v3')
+save(best.model, file = 'output/best.model.v3')
 
 ## Save model with no random effects for analysis
 
@@ -220,5 +220,5 @@ best.no.random <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + r
                        LST_C_min_lag + LST_C_mean_lag_squared, 
                      data = malaria.norm.high.season, ziformula = ~., family = "nbinom2",na.action="na.exclude")
 
-save(best.no.random, file = 'best.no.random.v3')
+save(best.no.random, file = 'output/best.no.random.v3')
 

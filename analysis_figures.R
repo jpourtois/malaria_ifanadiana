@@ -31,7 +31,10 @@ load_packages <- function() {
   if (!require('magrittr')) install.packages('magrittr');library(magrittr)
   if (!require('rsvg')) install.packages('rsvg');library(rsvg)
   if (!require('MuMIn')) install.packages('MuMIn');library(MuMIn)
-  
+  if (!require('DHARMa')) install.packages('DHARMa');library(DHARMa)
+  if (!require('stringr')) install.packages('stringr');library(stringr)
+  if (!require('ape')) install.packages('ape');library(ape)
+  if (!require('lmtest')) install.packages('lmtest');library(lmtest)
   
 }
 
@@ -39,125 +42,35 @@ load_packages()
 
 #### 1. FUNCTIONS ####
 
-### 1.1 Tools
+### 1.1 Analysis
 
-#Create plot outside of RStudio ##Credit to Emil Aalto
-myPPlot <- function(thePlot, w=16, h=12, plotPos=c(1,1), invertY=FALSE,
-                    newWindow=TRUE, plotDim=c(1,1)) {
-  if (newWindow) {
-    myWin(w=w, h=h)
-    pushViewport(viewport(layout=grid.layout(plotDim[1],plotDim[2])))
-  }
-  
-  plotRow = plotPos[1]
-  if (invertY) {
-    # invert row order to match MatLab style (y=1 at the bottom, not the top)
-    if (plotDim[1]>1) plotRow = plotDim[1] - plotRow + 1
-  }
-  print(thePlot, vp=viewport(layout.pos.row=plotRow, layout.pos.col=plotPos[2]))
-}
-
-#Open new window for plot ##Credit to Emil Aalto
-myWin <- function(w=16, h=12) {
-  quartz(w,h)
-  grid.newpage()
-}
-
-
-transformRaw <- function(malaria_raw) {
-  
-  ### 1. Average raw data to use for variable maps
-  averaged_data_raw <- aggregate(malaria_raw,by=list(malaria_raw$ID), mean, na.rm = TRUE)
-  
-  ### 2. Normalized data set
-  malaria <- malaria_raw
-  
-  # Normalize data with log function
-  malaria <- dplyr::mutate(malaria,
-                           Residential = log10(Residential),
-                           Rice = log10(Rice),
-                           Forest = log10(Forest + 0.001),
-                           wscore.n = log10(wscore.n + 0.01),
-                           toForest_meanDist = log10(toForest_meanDist + 1),
-                           edge_forest = log10(edge_forest + 10),
-                           real.dist.csb = log10(real.dist.csb + 10),
-                           loss_3y = log10(loss_3y),
-                           loss_10y = log10(loss_10y),
-                           Precipitation_lag = log10(Precipitation_lag),
-                           Precipitation_lag2 = log10(Precipitation_lag2))
-  
-  # Further scale data
-  malaria$real.dist.csb <- scale(malaria[,'real.dist.csb'])
-  norm.var <- scale(dplyr::select(malaria, c(alt_bf:Precipitation_lag2)))
-  malaria.norm <- cbind(malaria[,c('ID','year','month','time','Population','Population.u5','malaria_total_prop',
-                                   'malaria_u5_prop','malaria_total_pt','malaria_u5_pt',
-                                   'malaria_total','malaria_u5','real.dist.csb')], norm.var)
-  
-  malaria.norm <- dplyr::select(malaria.norm, -c('LST_C_mean','LST_C_max','LST_C_min', 
-                                                 'LST_C_mean_squared','LST_C_max_squared', 'LST_C_min_squared'))
-  
-  malaria.norm$ID <- as.factor(malaria.norm$ID)
-  
-  # Only keep rows with no NAs
-  malaria.norm <- malaria.norm[complete.cases(malaria.norm),]
-  
-  ### 3. Normalized data set with high season only
-  
-  # Top 7 months with high malaria incidence (above 25 cases per thousand people). 
-  malaria.norm.high.season <- malaria.norm[(malaria.norm$month > 10 | malaria.norm$month < 6),]
-  
-  # Assign seasons
-  malaria.norm.high.season$season <- NaN
-  
-  malaria.norm.high.season <- dplyr::mutate(malaria.norm.high.season,
-                                            season = replace(season, year == 2014 & month %in% c(1,2,3,4,5), 0),
-                                            season = replace(season, year == 2014 & month %in% c(11,12), 1),
-                                            season = replace(season, year == 2015 & month %in% c(1,2,3,4,5), 1),
-                                            season = replace(season, year == 2015 & month %in% c(11,12), 2),
-                                            season = replace(season, year == 2016 & month %in% c(1,2,3,4,5), 2),
-                                            season = replace(season, year == 2016 & month %in% c(11,12),3),
-                                            season = replace(season, year == 2017 & month %in% c(1,2,3,4,5), 3),
-                                            season = replace(season, year == 2017 & month %in% c(11,12), 4))
-  
-  malaria.norm.high.season$season <- as.factor(malaria.norm.high.season$season)
-  
-  ### 4. Averaged normalized data set with high season only
-  high.season.averaged <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
-  
-  return(list('averaged.raw' = averaged_data_raw, 'malaria.norm' = malaria.norm, 
-              'malaria.norm.high.season' = malaria.norm.high.season, 'high.season.averaged' = high.season.averaged))
-  
-}
-
-### 1.2 Analysis
-
-analysis_variables <- function(malaria_raw, averaged.raw) {
+analysis_variables <- function(df.raw, df.averaged.raw) {
   
   ### 1. Malaria incidence patterns
   
-  total_malaria <- sum(malaria_raw$malaria_total, na.rm = TRUE) # Total malaria cases
-  total_population <- sum(averaged.raw$Population, na.rm = TRUE) # Total population
+  total_malaria <- sum(df.raw$malaria_total, na.rm = TRUE) # Total malaria cases
+  total_population <- sum(df.averaged.raw$Population, na.rm = TRUE) # Total population
   
   average_per_capita <- total_malaria/total_population # Prop cases per person
   
   # Prop. of cases per Fokontany
-  range_average_fok <- range(tapply(malaria_raw$malaria_total_prop, malaria_raw$ID, sum, na.rm = TRUE))
+  range_average_fok <- range(tapply(df.raw$malaria_total_prop, df.raw$ID, sum, na.rm = TRUE))
   
   # Prop of cases per Fokontany per month
-  mean_monthly_fok <- mean(averaged.raw$malaria_total_pt, na.rm = TRUE)
-  range_monthly_fok <- range(averaged.raw$malaria_total_pt, na.rm = TRUE)
+  mean_monthly_fok <- mean(df.averaged.raw$malaria_total_pt, na.rm = TRUE)
+  range_monthly_fok <- range(df.averaged.raw$malaria_total_pt, na.rm = TRUE)
   
   # Number of missing data
   
   missing_row <- 0
   
-  for (id in unique(malaria_raw$ID)) {
+  for (id in unique(df.raw$ID)) {
     
-    missing_row <- missing_row + (48 - nrow(malaria_raw[malaria_raw$ID == id,]))
+    missing_row <- missing_row + (48 - nrow(df.raw[df.raw$ID == id,]))
     
   }
   
-  missing_row_ave <- missing_row/length(unique(malaria_raw$ID))
+  missing_row_ave <- missing_row/length(unique(df.raw$ID))
   
   malaria_analysis_table <- hux(Metric = c('Total malaria', 'Total population','Average infections PC','Min. infections P.C.','Max infections P.C.',
                                            'Mean monthly P.T.','Min. monthly P.T.', 'Max. monthly P.T','Mean missing data'), 
@@ -168,20 +81,20 @@ analysis_variables <- function(malaria_raw, averaged.raw) {
   malaria_analysis_table
   
   # Incidence per month
-  monthly_malaria <- tapply(malaria_raw$malaria_total_pt, malaria_raw$month, mean, na.rm = TRUE)
+  monthly_malaria <- tapply(df.raw$malaria_total_pt, df.raw$month, mean, na.rm = TRUE)
   
   ### 2. Precipitation and temperature patterns
   
   ## Precipitation patterns
-  p_monthly_mean <- tapply(malaria_raw$Precipitation, malaria_raw$month, mean, na.rm = TRUE)
+  p_monthly_mean <- tapply(df.raw$Precipitation, df.raw$month, mean, na.rm = TRUE)
 
   ## Temperature patterns
-  temp_monthly_mean <- tapply(malaria_raw$LST_C_mean[malaria_raw$LST_C_mean > 0], malaria_raw$month[malaria_raw$LST_C_mean > 0], mean, na.rm = TRUE)
+  temp_monthly_mean <- tapply(df.raw$LST_C_mean[df.raw$LST_C_mean > 0], df.raw$month[df.raw$LST_C_mean > 0], mean, na.rm = TRUE)
   
   malaria_climate_per_month <- hux('Month' = c('January','February','March','April','May','June','July','August','September','October','November','December'), 
                                    'Malaria incidence (p.t.)' = monthly_malaria,
-                                   'Precipitation (mm)' = p_monthly,
-                                   'Mean temperature (C)' = temp_monthly) %>% 
+                                   'Precipitation (mm)' = p_monthly_mean,
+                                   'Mean temperature (C)' = temp_monthly_mean) %>% 
     set_bold(1, everywhere)
   
   return(list('malaria' = malaria_analysis_table, 'climate' = malaria_climate_per_month))
@@ -189,34 +102,25 @@ analysis_variables <- function(malaria_raw, averaged.raw) {
   
 }
 
-analysis_glmm <- function(best.model, best.no.random, malaria.norm.high.season) {
+in_sample_pred <- function(model, df.norm.high.season) {
   
   ### 1. Within-sample predictions
   
-  malaria.norm.high.season$pred <- predict(best.model, type = 'response')
-  
-  malaria.norm.high.season$pred.no.rand <- predict(best.no.random, type = 'response')
-  
+  df.norm.high.season$pred <- predict(model, type = 'response')
+ 
   # Correlation between predicted and observed
-  cor.pred <- cor(log10(malaria.norm.high.season$malaria_total_pt + 1), log10(malaria.norm.high.season$pred + 1), method = "pearson", use = "complete.obs")
-  cor.pred.no.rand <- cor(log10(malaria.norm.high.season$malaria_total_pt + 1), log10(malaria.norm.high.season$pred.no.rand + 1), method = "pearson", use = "complete.obs")
+  cor.pred <- cor(log10(df.norm.high.season$malaria_total_pt + 1), log10(df.norm.high.season$pred + 1), method = "pearson", use = "complete.obs")
   
   # Get RMSE
-  malaria.norm.high.season$diff <- malaria.norm.high.season$malaria_total_pt - malaria.norm.high.season$pred
-  rmse.model <- sqrt(mean(malaria.norm.high.season$diff^2))
-  
-  malaria.norm.high.season$diff.no.rand <- malaria.norm.high.season$malaria_total_pt - malaria.norm.high.season$pred.no.rand
-  rmse.model.no.rand <- sqrt(mean(malaria.norm.high.season$diff.no.rand^2))
+  df.norm.high.season$diff <- df.norm.high.season$malaria_total_pt - df.norm.high.season$pred
+  rmse.model <- sqrt(mean(df.norm.high.season$diff^2))
   
   # Average predictions over time
   
-  high.season.ave <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
+  high.season.ave <- aggregate(df.norm.high.season,by=list(df.norm.high.season$ID), mean, na.rm = TRUE)
   
   cor.spatial.spearman <- cor(high.season.ave$malaria_total_pt, high.season.ave$pred ,method = "spearman", use = "complete.obs")
   cor.spatial.pearson <- cor(high.season.ave$malaria_total_pt, high.season.ave$pred ,method = "pearson", use = "complete.obs")
-  
-  cor.spatial.rand.spearman <- cor(high.season.ave$malaria_total_pt, high.season.ave$pred.no.rand ,method = "spearman", use = "complete.obs")
-  cor.spatial.rand.pearson <- cor(high.season.ave$malaria_total_pt, high.season.ave$pred.no.rand ,method = "pearson", use = "complete.obs")
   
   # Rank according to malaria incidence and predictions
   high.season.ave$rank.malaria <- rank(high.season.ave$malaria_total_pt)
@@ -233,28 +137,40 @@ analysis_glmm <- function(best.model, best.no.random, malaria.norm.high.season) 
   top.ID.pred.40 <- high.season.ave$Group.1[rank(high.season.ave$pred) > 155]
   
   top_40 <- sum(top.ID.obs.40 %in% top.ID.pred.40)
+  
+  ### Make table 
+ 
+  model_analysis <- hux(Metrics = c("RMSE","Pearson's R", 
+                                    "Pearson's R, spatial", "Spearman's rho, spatial",
+                                    "Top 20 (10%) rank", "Top 40 (20%) rank"),
+                        Results = c(rmse.model, cor.pred, 
+                                    cor.spatial.pearson, cor.spatial.spearman,
+                                    top_20, top_40))
+  model_analysis
+  
+}
 
-  ### 2. Out-of sample predictions
+out_sample_pred <- function(model, df.norm.high.season){
+  
+  ### Out-of sample predictions
   
   # Define training and testing data
-  high.season.train <- malaria.norm.high.season[malaria.norm.high.season$season %in% c(1,2),]
-  high.season.test <- malaria.norm.high.season[malaria.norm.high.season$season %in% c(3),]
+  high.season.train <- df.norm.high.season[df.norm.high.season$season %in% c(1,2),]
+  high.season.test <- df.norm.high.season[df.norm.high.season$season %in% c(3),]
   
-  best.model.train <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + 
-                                wscore.n + loss_3y + LST_C_min_lag + LST_C_mean_lag + LST_C_mean_lag_squared  + 
-                                Precipitation_lag + (1 | ID) + (1 | month), data = high.season.train, ziformula = ~., family = "nbinom2",na.action="na.exclude")
-  summary(best.model.train)
+  model.formula <- model$call$formula
+  model.train <- glmmTMB(model.formula, data = high.season.train, ziformula = ~., family = "nbinom2",na.action="na.exclude")
   
   # Predict on test data
-  high.season.test$pred <- predict(best.model.train, high.season.test, type = 'response')
+  high.season.test$pred <- predict(model.train, high.season.test, type = 'response')
   high.season.test$diff <- high.season.test$malaria_total_pt - high.season.test$pred
   
   # Calculate RMSE
   rmse.model.test<- sqrt(mean(high.season.test$diff^2))
   
   # Compare RMSE to mean and range of malaria incidence
-  high.season.malaria.mean <- mean(malaria.norm.high.season$malaria_total_pt)
-  high.season.malaria.range <- range(malaria.norm.high.season$malaria_total_pt)
+  high.season.malaria.mean <- mean(df.norm.high.season$malaria_total_pt)
+  high.season.malaria.range <- range(df.norm.high.season$malaria_total_pt)
   
   # Calculate spatial rank
   high.season.test.av <- aggregate(high.season.test,by=list(high.season.test$ID), mean, na.rm = TRUE)
@@ -274,49 +190,69 @@ analysis_glmm <- function(best.model, best.no.random, malaria.norm.high.season) 
   spearman.out <- cor(high.season.test.av$malaria_total_pt,high.season.test.av$pred, method = "spearman")
   pearson.out <- cor(high.season.test.av$malaria_total_pt,high.season.test.av$pred, method = "pearson")
   
-  # No random effects
-  best.model.train.fixed <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + 
-                                      wscore.n + loss_3y + LST_C_min_lag + LST_C_mean_lag + LST_C_mean_lag_squared  + Precipitation_lag,
-                                    data = high.season.train, ziformula = ~., family = "nbinom2",na.action="na.exclude")
-  summary(best.model.train.fixed)
-  
-  high.season.test$pred.fixed <- predict(best.model.train.fixed, high.season.test, type = 'response')
-  high.season.test$diff.fixed <- high.season.test$malaria_total_pt - high.season.test$pred.fixed
-  
-  rmse.model.test.fixed <- sqrt(mean(high.season.test$diff.fixed^2))
-  
   
   ### Make table 
- 
-  model_analysis <- hux(Metrics = c("RMSE","Pearson's R", 
-                                    "Pearson's R, spatial", "Spearman's rho, spatial",
-                                    "Top 20 (10%) rank", "Top 40 (20%) rank",
-                                    "RMSE, out-of-sample",
+  
+  model_analysis <- hux(Metrics = c("RMSE, out-of-sample",
                                     "High-season malaria average", "High-season malaria min.", "High-season malaria max.",
                                     "Top 20 (10%) rank, out-of-sample", "Top 40 (20%) rank, out-of-sample",
-                                    "Pearson's R, out-of-sample", "Spearman's rho, out-of-sample",
-                                    "RMSE (no random effects)", "Pearson's R (no random effects)",
-                                    "Pearson's R, spatial (no random effects)", "Spearman's rho, spatial (no random effects)",
-                                    "RMSE, out-of-sample (no random effects)"),
-                        Results = c(rmse.model, cor.pred, 
-                                    cor.spatial.pearson, cor.spatial.spearman,
-                                    top_20, top_40,
-                                    rmse.model.test,
+                                    "Pearson's R, out-of-sample", "Spearman's rho, out-of-sample"),
+                        Results = c(rmse.model.test,
                                     high.season.malaria.mean, high.season.malaria.range[1], high.season.malaria.range[2],
                                     top.20.out, top.40.out,
-                                    pearson.out, spearman.out,
-                                    rmse.model.no.rand, cor.pred.no.rand,
-                                    cor.spatial.rand.pearson, cor.spatial.rand.spearman,
-                                    rmse.model.test.fixed))
+                                    pearson.out, spearman.out))
   model_analysis
   
 }
 
-### 1.3 Tables 
-
-table_model_coefficients <- function(best.model){
+calculateMoran <- function(model, df.norm.high.season){
   
-  param <- parameters(best.model)
+  # Get residuals with model predictions
+  df.norm.high.season$pred <- predict(model, type = 'response')
+  df.norm.high.season$res <- df.norm.high.season$malaria_total_pt - df.norm.high.season$pred
+  
+  # Aggregate residuals over time to get sum of residuals for each Fokontany
+  res.by.time <- aggregate(res ~ ID, data = df.norm.high.season, FUN = sum, na.rm = TRUE)
+  
+  # Get lat and long for each Fokontany
+  lats <- aggregate(lat~ID, data = df.norm.high.season, FUN = mean, na.rm = TRUE)
+  long <- aggregate(long~ID, data = df.norm.high.season, FUN = mean, na.rm = TRUE)
+  
+  # Calculate distance matrix for Moran's I test
+  fok.dist <- as.matrix(dist(cbind(long$long, lats$lat)))
+  
+  fok.dist.inv <- 1/fok.dist
+  diag(fok.dist.inv) <- 0
+  
+  moran.test <- Moran.I(res.by.time$res, fok.dist.inv)
+  return(moran.test)
+  
+}
+
+calculateACF <- function(model, df.norm.high.season){
+  
+  # Get residuals from model predictions
+  df.norm.high.season$pred <- predict(model, type = 'response')
+  df.norm.high.season$res <- df.norm.high.season$malaria_total_pt - df.norm.high.season$pred
+  
+  # Aggregate residuals over space to get sum of residuals for each time point
+  res.by.time <- aggregate(res ~ time, data = df.norm.high.season, FUN = sum, na.rm = TRUE)
+  
+  # Calculate ACF
+  acf.test <- acf(res.by.time$res)
+  
+  # Test for autocorrelation with DW test
+  dw.test <- lmtest::dwtest(res.by.time$res ~ 1, order.by = res.by.time$time)
+  
+  return(list(acf = acf.test, test = dw.test))
+  
+}
+
+### 1.2 Tables 
+
+table_model_coefficients <- function(model){
+  
+  param <- parameters(model)
   
   param.both <- param[param$Effects == 'fixed',]
   param.both$df_error <- NULL
@@ -359,7 +295,7 @@ table_model_coefficients <- function(best.model){
   
   coef.table
   
-  quick_docx(coef.table, file = 'coef_table.docx')
+  quick_docx(coef.table, file = 'output/coef_table.docx')
   #quick_pdf(coef.table, file = 'coef_table.pdf')
   
 }
@@ -367,8 +303,8 @@ table_model_coefficients <- function(best.model){
 table_model_avg <- function(){
   
   # Load all models
-  load('glm.model.2.v3') 
-  load('aic.matrix.2.v3')
+  load('output/glm.model.2.v3') 
+  load('output/aic.matrix.2.v3')
   
   # Average of top 10% models after step 2
   low.quant <- quantile(aic.matrix.2, 0.1)
@@ -387,28 +323,28 @@ table_model_avg <- function(){
   average_model <- average_model %>% 
     set_bold(1, everywhere)
   
-  quick_docx(average_model, file = 'average_model.docx')
+  quick_docx(average_model, file = 'output/average_model.docx')
   
 }
 
-### 1.4 Figures
+### 1.3 Figures
 
-fig_map_malaria <- function(averaged.raw){
+fig_map_malaria <- function(df.averaged.raw){
   
   ## Data processing for qGIS
 
-  # Export prediction data
-  write.csv(averaged.raw[,c('malaria_total_pt','ID')], 'malaria_obs_v3.csv')
+  # Export observation data
+  write.csv(df.averaged.raw[,c('malaria_total_pt','ID')], 'output/malaria_obs_v3.csv')
   
   # Load Fokontany borders
-  fkt.bound <- st_read('~/Documents/Stanford/Research/Malaria Project/Data/spatial_datasets/Limite FKT/Limite_FKT_Distr_Ifanadiana.shp')
+  fkt.bound <- st_read('data/Limite_FKT/Limite_FKT_Distr_Ifanadiana.shp')
   fkt.bound <- dplyr::select(fkt.bound, c(ID, geometry))
   
   # Load road data
-  roads <- st_read("~/Documents/Stanford/Research/Malaria Project/Data/csv_datasets/dd-prediction-pivot-master/data/spatial/admin/roads.shp")
+  roads <- st_read('data/roads/roads.shp')
   
   # Load commune border data
-  commune <- st_read("~/Documents/Stanford/Research/Malaria Project/Data/csv_datasets/dd-prediction-pivot-master/data/spatial/admin/projected-29738/communes.shp") %>%
+  commune <- st_read('data/commune_projected_29738/communes.shp') %>%
     dplyr::select(commune = LIB_COM)
   
   # Load road data
@@ -421,19 +357,19 @@ fig_map_malaria <- function(averaged.raw){
   
   # Select and export paved roads
   road_paved <- roads[roads$paved == 1,]
-  #st_write(road_paved, 'road_paved_v3.shp')
+  #st_write(road_paved, 'output/road_paved_v3.shp')
   
   # Select and export unpaved roads
   roads_unpaved <- roads[roads$paved == 0,]
-  #st_write(roads_unpaved, 'road_unpaved_v3.shp', append = FALSE)
+  #st_write(roads_unpaved, 'output/road_unpaved_v3.shp', append = FALSE)
   
   ## Make Figure 1A and 1B
   
   # Load Figure 1A (made in qGIS)
-  broad_view <- readPNG('~/Documents/Stanford/Research/Malaria Project/Data/csv_datasets/fig1A_v3.png')
+  broad_view <- readPNG('output/fig1A_v3.png')
   
   # Load Figure 1B (made in qGIS)
-  land_use_image <- readPNG('~/Documents/Stanford/Research/Malaria Project/Data/csv_datasets/fig1_panelBalt.png')
+  land_use_image <- readPNG('output/fig1_panelBalt.png')
   
   fig1A <- ggplot() + background_image(broad_view) + 
     coord_fixed(ratio = 17.27/21.34) + # Change image ratio if needed
@@ -444,19 +380,18 @@ fig_map_malaria <- function(averaged.raw){
     theme_minimal()
   
   fig1AB <- ggarrange(fig1A, fig1B, labels = c("A","B"), font.label = list(size = 10))
-  myPPlot(fig1AB)
   
   # Save tiff file
-  ggsave("fig1AB.pdf",fig1AB, units="mm",width=225, height= 112, dpi=300)
-  ggsave("Fig1.tiff",fig1AB, units="in",width=5.2, height= 2.4, dpi=300)
+  ggsave("figures/fig1.pdf",fig1AB, units="mm",width=225, height= 112, dpi=300)
+  ggsave("figures/Fig1.tiff",fig1AB, units="in",width=5.2, height= 2.4, dpi=300)
   
 }
 
-fig_coefficients <- function(best.model, malaria.norm.high.season, malaria_raw){
+fig_coefficients <- function(model, df.norm.high.season, df.raw){
   
   ## Coefficients for conditional model
   
-  param <- parameters(best.model)
+  param <- parameters(model)
   
   param.both <- param[param$Effects == 'fixed',]
   param.both <- param.both[-nrow(param.both),]
@@ -496,20 +431,23 @@ fig_coefficients <- function(best.model, malaria.norm.high.season, malaria_raw){
   
   ## Calculate marginal effect for LST by hand (to consider both LST and LST_squared), credit to Michelle Evans
   
+  ID.eg <- 156
+  time.eg <- 37
+  
   # Create data frame with mean of each variable
-  pred.temp.data <- malaria.norm.high.season %>%
-    dplyr::select(-malaria_total_pt, -ID, -month, -season) %>%
+  pred.temp.data <- df.norm.high.season %>%
+    dplyr::select(-malaria_total_pt, -ID, -month, -season, - Commune, - time_factor, -pos, -group, -LST_C_mean_lag, -LST_C_mean_lag_squared) %>%
     summarise_all(mean) %>%
-    mutate(ID = 156, month = 2)
+    mutate(ID = ID.eg, time = time.eg)
   
-  # Replicate data
-  pred.temp.data <- pred.temp.data[rep(1,50),]
+  # Re-add data that can't be averaged
+  extra.data <- df.norm.high.season[df.norm.high.season$ID == ID.eg & df.norm.high.season$time == time.eg,
+                                  c('season', 'Commune','time_factor','pos','group')]
   
-  # Replace LST with sequence
-  pred.temp.data$LST_C_mean_lag <- seq(min(malaria.norm.high.season$LST_C_mean_lag), max(malaria.norm.high.season$LST_C_mean_lag), length.out = 50)
+  pred.temp.data <- cbind(pred.temp.data, extra.data)
   
   # Create data frame with just LST and LST index
-  temp.join <- malaria.norm.high.season %>%
+  temp.join <- df.norm.high.season %>%
     dplyr::select(LST_C_mean_lag, LST_C_mean_lag_squared) %>%
     mutate(LST_C_mean_lag = round(LST_C_mean_lag,1),
            LST_C_mean_lag_squared = round(LST_C_mean_lag_squared,1)) %>%
@@ -519,26 +457,26 @@ fig_coefficients <- function(best.model, malaria.norm.high.season, malaria_raw){
     arrange(LST_C_mean_lag_squared) %>%
     slice(1)
   
-  # Join mean of variables with LST data
-  pred.temp2.data <- pred.temp.data[rep(1, nrow(temp.join)),] %>%
-    mutate(LST_C_mean_lag = temp.join$LST_C_mean_lag) %>%
-    dplyr::select(-LST_C_mean_lag_squared) %>%
-    left_join(temp.join, by = "LST_C_mean_lag")
+  # Replicate data
+  pred.temp.data <- pred.temp.data[rep(1,nrow(temp.join)),]
   
-  with(pred.temp2.data, plot(LST_C_mean_lag, LST_C_mean_lag_squared))
-  with(pred.temp.data, plot(LST_C_mean_lag, LST_C_mean_lag_squared))
+  # Join both
+  pred.temp.data <- cbind(pred.temp.data,temp.join)
+  
+  # Get LST sd and mean to rescale LST for plotting
+  lst_sd <- sd(df.raw$LST_C_mean_lag)
+  lst_mean <- mean(df.raw$LST_C_mean_lag)
+  
+  with(pred.temp.data, plot(LST_C_mean_lag*lst_sd + lst_mean, LST_C_mean_lag_squared))
   
   # Predict malaria incidence using new dataset
-  mean.temp2.preds <- predict(best.model, type = "response", newdata = pred.temp2.data, se.fit = TRUE)
- 
-  # Get LST sd and mean to rescale LST for plotting
-  lst_sd <- sd(malaria_raw$LST_C_mean_lag)
-  lst_mean <- mean(malaria_raw$LST_C_mean_lag)
+  mean.temp.preds <- predict(model, type = "response", newdata = pred.temp.data, se.fit = TRUE)
+
   
   # Make data frame with rescaled LST and lower and upper SE intervals
-  marg.eff <- data.frame(LST = pred.temp2.data$LST_C_mean_lag*lst_sd + lst_mean, pred = mean.temp2.preds$fit, 
-                         lower = mean.temp2.preds$fit - mean.temp2.preds$se.fit,
-                         higher = mean.temp2.preds$fit + mean.temp2.preds$se.fit)
+  marg.eff <- data.frame(LST = pred.temp.data$LST_C_mean_lag*lst_sd + lst_mean, pred = mean.temp.preds$fit, 
+                         lower = mean.temp.preds$fit - mean.temp.preds$se.fit,
+                         higher = mean.temp.preds$fit + mean.temp.preds$se.fit)
   
   fig2b <- ggplot(marg.eff, aes(x = LST, y = pred)) +
     geom_line(size = 1) + 
@@ -548,24 +486,23 @@ fig_coefficients <- function(best.model, malaria.norm.high.season, malaria_raw){
   
   fig2 <- ggarrange(fig2a, fig2b, widths = c(2, 1.7), labels = c('A','B'),font.label = list(size = 10))
   
-  ggsave("fig2.pdf",fig2, units="mm",width=250, height= 112, dpi=300)
-  ggsave("Fig2.tiff",fig2, units="in",width= 7.5, height= 3.6, dpi=300)
-  
+  ggsave("figures/fig2.pdf",fig2, units="mm",width=250, height= 112, dpi=300)
+  ggsave("figures/Fig2.tiff",fig2, units="in",width= 7.5, height= 3.6, dpi=300)
   
 }
 
-fig_pred <- function(best.model, malaria.norm.high.season){
+fig_pred <- function(model, df.norm.high.season){
   
   ### Figure 3A: Spatial predictions and residuals
   
-  malaria.norm.high.season$pred <- predict(best.model, type = 'response')
-  malaria.norm.high.season$diff <- malaria.norm.high.season$pred - malaria.norm.high.season$malaria_total_pt 
+  df.norm.high.season$pred <- predict(model, type = 'response')
+  df.norm.high.season$diff <- df.norm.high.season$pred - df.norm.high.season$malaria_total_pt 
   
-  high.season.ave <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
+  high.season.ave <- aggregate(df.norm.high.season,by=list(df.norm.high.season$ID), mean, na.rm = TRUE)
   high.season.ave$ID <- as.numeric(as.character(high.season.ave$Group.1))
   
   # Load Fokontany boundary
-  fkt.bound <- st_read('~/Documents/Stanford/Research/Malaria Project/Data/spatial_datasets/Limite FKT/Limite_FKT_Distr_Ifanadiana.shp')
+  fkt.bound <- st_read('data/Limite_FKT/Limite_FKT_Distr_Ifanadiana.shp')
   fkt.bound <- dplyr::select(fkt.bound, c(ID, geometry))
   
   # Join averaged dataset with spatial boundary
@@ -612,12 +549,12 @@ fig_pred <- function(best.model, malaria.norm.high.season){
   
   ### Figure 3C: Out-of-sample predictions
   
-  high.season.train <- malaria.norm.high.season[malaria.norm.high.season$season %in% c(1,2),]
-  high.season.test <- malaria.norm.high.season[malaria.norm.high.season$season %in% c(3),]
+  high.season.train <- df.norm.high.season[df.norm.high.season$season %in% c(1,2),]
+  high.season.test <- df.norm.high.season[df.norm.high.season$season %in% c(3),]
   
-  best.model.train <- glmmTMB(malaria_total_pt ~ highseason + Residential + Rice + real.dist.csb + 
-                                wscore.n + loss_3y + LST_C_min_lag + LST_C_mean_lag + LST_C_mean_lag_squared  + 
-                                Precipitation_lag + (1 | ID) + (1 | month), data = high.season.train, ziformula = ~., family = "nbinom2",na.action="na.exclude")
+  model.formula <- model$call$formula
+  
+  best.model.train <- glmmTMB(model.formula, data = high.season.train, ziformula = ~., family = "nbinom2",na.action="na.exclude")
   #summary(best.model.train)
   
   # Predict on test data
@@ -639,15 +576,15 @@ fig_pred <- function(best.model, malaria.norm.high.season){
   fig3 <- ggarrange(plot.pred, plot.diff, fig3b_3c, ncol = 3, labels = c('A','', ''), font.label = list(size = 10))
   fig3
   
-  ggsave("fig3.pdf",fig3, units="mm",width= 200, height= 150, dpi=300)
-  ggsave("Fig3.tiff",fig3, units="in",width= 7, height= 3.5, dpi=300)
+  ggsave("figures/fig3.pdf",fig3, units="mm",width= 200, height= 150, dpi=300)
+  ggsave("figures/Fig3.tiff",fig3, units="in",width= 7, height= 3.5, dpi=300)
   
   
 }
 
-fig_sem <- function(malaria.norm.high.season){
+fig_sem <- function(df.norm.high.season){
   
-  high.season.averaged <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$ID), mean, na.rm = TRUE)
+  high.season.averaged <- aggregate(df.norm.high.season,by=list(df.norm.high.season$ID), mean, na.rm = TRUE)
   
   psem_model_1 <- psem(
     lm(malaria_total_pt ~ highseason + Rice + Residential + edge_forest + toForest_meanDist+ LST_C_mean_lag + 
@@ -758,13 +695,13 @@ graph [fontsize = 10, overlap = TRUE]
   fig4 %>%
     export_svg %>% 
     charToRaw %>% 
-    rsvg_pdf("fig4.pdf")
+    rsvg_pdf("figures/fig4.pdf")
   
 }
 
-fig_climate <- function(malaria_raw){
+fig_climate <- function(df.raw){
   
-  malaria.per.month <- aggregate(malaria_raw,by=list(malaria_raw$ID,malaria_raw$month), mean, na.rm = TRUE)
+  malaria.per.month <- aggregate(df.raw,by=list(df.raw$ID,df.raw$month), mean, na.rm = TRUE)
   climate.per.month <- aggregate(malaria.per.month,by=list(malaria.per.month$month), mean, na.rm = TRUE)
   climate.per.month <- dplyr::select(climate.per.month, c(month,LST_C_mean_lag,Precipitation_lag))
   
@@ -802,19 +739,17 @@ fig_climate <- function(malaria_raw){
     theme(axis.text.x = element_text(angle = 45)) 
   
   figS1 <- ggarrange(figS1A, figS1B, labels = c("A","B"))
-  
-  myPPlot(figS1)
 
-  ggsave("figS1.pdf", figS1, units="mm",width=200, height= 100, dpi=300)
+  ggsave("figures/figS1.pdf", figS1, units="mm",width=200, height= 100, dpi=300)
   
 }
 
-fig_map_variables <- function(averaged.raw){
+fig_map_variables <- function(df.averaged.raw){
   
-  fkt.bound <- st_read('~/Documents/Stanford/Research/Malaria Project/Data/spatial_datasets/Limite FKT/Limite_FKT_Distr_Ifanadiana.shp')
+  fkt.bound <- st_read('data/Limite_FKT/Limite_FKT_Distr_Ifanadiana.shp')
   fkt.bound <- dplyr::select(fkt.bound, c(ID, geometry))
 
-  map.raw <- inner_join(averaged.raw, fkt.bound, by = "ID")
+  map.raw <- inner_join(df.averaged.raw, fkt.bound, by = "ID")
   
   # Wealth index
   plot.wealth <- ggplot(map.raw) +
@@ -1004,29 +939,27 @@ fig_map_variables <- function(averaged.raw){
                             plot.edge.forest, plot.loss.10, plot.loss.3, 
                             plot.temp.min, plot.temp.max, plot.temp.mean, plot.temp.mean.squared, plot.prec)
   
-  myPPlot(figs2)
-  
-  ggsave("figs2.pdf", figs2, units="mm",width=200, height= 170, dpi=300)
+  ggsave("figures/figs2.pdf", figs2, units="mm",width=200, height= 170, dpi=300)
   
   
 }
 
-fig_malaria_seasonal <- function(best.model, malaria.norm.high.season){
+fig_malaria_seasonal <- function(model, df.norm.high.season){
   
-  malaria.norm.high.season$pred <- predict(best.model, type = 'response')
-  malaria.norm.high.season$diff <- malaria.norm.high.season$malaria_total_pt - malaria.norm.high.season.pred$pred
+  df.norm.high.season$pred <- predict(model, type = 'response')
+  df.norm.high.season$diff <- df.norm.high.season$malaria_total_pt - df.norm.high.season$pred
   
-  malaria.norm.high.season$time.labels <- paste(month.abb[malaria.norm.high.season$month],malaria.norm.high.season$year)
-  malaria.norm.high.season$time.labels <- factor(malaria.norm.high.season$time.labels, levels = c("Apr 2014", "May 2014","Jun 2014", "Jul 2014", "Aug 2014", "Sep 2014", "Oct 2014", "Nov 2014", "Dec 2014", "Jan 2015", "Feb 2015",
+  df.norm.high.season$time.labels <- paste(month.abb[df.norm.high.season$month],df.norm.high.season$year)
+  df.norm.high.season$time.labels <- factor(df.norm.high.season$time.labels, levels = c("Apr 2014", "May 2014","Jun 2014", "Jul 2014", "Aug 2014", "Sep 2014", "Oct 2014", "Nov 2014", "Dec 2014", "Jan 2015", "Feb 2015",
                                                                           "Mar 2015", "Apr 2015", "May 2015", "Jun 2015", "Jul 2015", "Aug 2015", "Sep 2015", "Oct 2015", "Nov 2015", "Dec 2015",
                                                                           "Jan 2016", "Feb 2016", "Mar 2016", "Apr 2016", "May 2016", "Jun 2016", "Jul 2016", "Aug 2016", "Sep 2016", "Oct 2016",
                                                                           "Nov 2016", "Dec 2016", "Jan 2017", "Feb 2017", "Mar 2017", "Apr 2017", "May 2017", "Jun 2017", "Jul 2017", "Aug 2017",
                                                                           "Sep 2017", "Oct 2017", "Nov 2017", "Dec 2017"))
   
   
-  high.season.pred.time <- aggregate(malaria.norm.high.season,by=list(malaria.norm.high.season$time), mean, na.rm = TRUE)
+  high.season.pred.time <- aggregate(df.norm.high.season,by=list(df.norm.high.season$time), mean, na.rm = TRUE)
   
-  small.pred <- dplyr::select(malaria.norm.high.season, c('ID','month','year','time.labels','malaria_total_pt','pred'))
+  small.pred <- dplyr::select(df.norm.high.season, c('ID','month','year','time.labels','malaria_total_pt','pred'))
   long.pred <- gather(small.pred, group, value, c('malaria_total_pt','pred'), factor_key=TRUE)
   #long.pred$time <- as.factor(long.pred$time)
   
@@ -1038,28 +971,57 @@ fig_malaria_seasonal <- function(best.model, malaria.norm.high.season){
     theme_minimal()  +
     theme(legend.position="bottom", axis.text.x=element_text(angle = 45, hjust = 1), plot.margin=margin(r=10,l=30, t=20, b=10), axis.title=element_text(size=9))
     
-  ggsave("figs3.pdf", figs3, units="mm",width=200, height= 100, dpi=300)
+  ggsave("figures/figs3.pdf", figs3, units="mm",width=200, height= 100, dpi=300)
   
 }
 
 #### 2. RUN ANALYSIS ####
 
-setwd("~/Documents/Stanford/Research/Malaria Project/Data/csv_datasets")
+# Load all datasets
 
-### 2.0 Load and transform data 
-malaria_raw <- read.csv('malaria_v3.csv')
+malaria_raw <- read.csv('output/malaria_v3.csv')
+averaged.raw <- read.csv('output/averaged_raw.csv')
+malaria.norm <- read.csv('output/malaria_norm.csv')
+malaria.norm.high.season <- read.csv('output/malaria_norm_high_season.csv')
+high.season.averaged <- read.csv('output/high_season_averaged.csv')
 
-transformed_data <- transformRaw(malaria_raw)
 
-averaged.raw <- transformed_data$averaged.raw
-malaria.norm <- transformed_data$malaria.norm
-malaria.norm.high.season <- transformed_data$malaria.norm.high.season
-high.season.averaged <- transformed_data$high.season.averaged
+# Note: I retrain models here as saved models cannot always be read if glmmTMB is updated. 
 
-best.model.v3 <- load('best.model.v3')
-summary(best.model)
+# Final processing for the covariance structures
+malaria.norm.high.season$time_factor <- numFactor(malaria.norm.high.season$time)
 
-best.no.random.v3 <- load('best.no.random.v3')
+malaria.norm.high.season$pos <- numFactor(scale(malaria.norm.high.season$long), scale(malaria.norm.high.season$lat))
+malaria.norm.high.season$group <- 'All'
+
+# Train model with month and Fokontany as random effects
+re.model <- glmmTMB(formula = malaria_total_pt ~ highseason + Residential + 
+                       Rice + real.dist.csb + wscore.n + loss_3y + Precipitation_lag + 
+                       LST_C_mean_lag + LST_C_min_lag + LST_C_mean_lag_squared + 
+                       (1|ID) + (1|month), 
+                     data = malaria.norm.high.season, 
+                     family = "nbinom2", ziformula = ~., na.action = "na.exclude")
+summary(re.model)
+
+# Train same model without random effects to compare
+fixed.model <- glmmTMB(formula = malaria_total_pt ~ highseason + Residential + 
+                      Rice + real.dist.csb + wscore.n + loss_3y + Precipitation_lag + 
+                      LST_C_mean_lag + LST_C_min_lag + LST_C_mean_lag_squared, 
+                    data = malaria.norm.high.season, 
+                    family = "nbinom2", ziformula = ~., na.action = "na.exclude")
+
+
+# Train model that explicitly accounts for temporal and spatial auto-correlation 
+
+sp.temp.model <- glmmTMB(formula = malaria_total_pt ~ highseason + Residential + 
+                      Rice + real.dist.csb + wscore.n + loss_3y + Precipitation_lag + 
+                      LST_C_mean_lag + LST_C_min_lag + LST_C_mean_lag_squared + 
+                        ou(time_factor-1 |Commune) + mat(pos + 0|group), 
+                    data = malaria.norm.high.season, 
+                    family = "nbinom2", ziformula = ~., na.action = "na.exclude")
+summary(sp.temp.model)
+
+# Note that this model cannot easily be used for forward predictions, which is why I use re.model for predictions
 
 ### 2.1 Analysis of malaria incidence and other variables
 
@@ -1071,9 +1033,32 @@ malaria_metrics
 monthly_data <- out_variable_analysis$climate
 monthly_data
 
-### 2.2 Analysis of model predictions
+### 2.2 Check for spatial and temporal autocorrelation in both models
 
-analysis_glmm(best.model, best.no.random, malaria.norm.high.season)
+# Compare temporal autocorrelation between RE vs OU/Matern model
+re.acf <- calculateACF(re.model, malaria.norm.high.season)
+re.acf$test$p.value
+
+sp.temp.acf <- calculateACF(sp.temp.model, malaria.norm.high.season)
+sp.temp.acf$test$p.value
+
+# Compare spatial autocorrelation between RE vs OU/Matern model
+re.moran <- calculateMoran(re.model, malaria.norm.high.season)
+re.moran$p.value
+re.moran$observed
+
+sp.temp.moran <- calculateMoran(sp.temp.model, malaria.norm.high.season)
+sp.temp.moran$p.value
+sp.temp.moran$observed
+
+### 2.3 Analysis of model predictions
+
+# Stats used in the text
+in_sample_pred(re.model, malaria.norm.high.season)
+out_sample_pred(re.model, malaria.norm.high.season)
+
+in_sample_pred(fixed.model, malaria.norm.high.season)
+out_sample_pred(fixed.model, malaria.norm.high.season)
 
 #### 3. MAKE TABLES ####
 
@@ -1081,9 +1066,9 @@ analysis_glmm(best.model, best.no.random, malaria.norm.high.season)
 
 # See text
 
-### Table S1: Model coefficients
+### Table S1: Model coefficients for model with OU and Matern
 
-table_model_coefficients(best.model)
+table_model_coefficients(sp.temp.model)
 
 ### Table S2: Model selection steps
 
@@ -1093,6 +1078,12 @@ table_model_coefficients(best.model)
 
 table_model_avg()
 
+### Table S4: Model coefficients for model with random effects
+
+table_model_coefficients(re.model)
+
+###
+
 #### 4. MAKE FIGURES ####
 
 ### Figure 1: Malaria and land-use maps
@@ -1101,11 +1092,11 @@ fig_map_malaria(averaged.raw)
 
 ### Figure 2: Model coefficients and marginal effect of LST
 
-fig_coefficients(best.model, malaria.norm.high.season, malaria_raw)
+fig_coefficients(sp.temp.model, malaria.norm.high.season, malaria_raw)
 
 ### Figure 3: Model predictions
 
-fig_pred(best.model, malaria.norm.high.season)
+fig_pred(re.model, malaria.norm.high.season)
 
 ### Figure 4: SEM 
 
@@ -1121,7 +1112,7 @@ fig_map_variables(averaged.raw)
 
 ### Figure S3: Seasonal malaria incidence and predictions
 
-fig_malaria_seasonal(best.model, malaria.norm.high.season)
+fig_malaria_seasonal(re.model, malaria.norm.high.season)
 
 
 
